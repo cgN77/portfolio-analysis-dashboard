@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder
-from portfolio_classification import create_classification_charts
+# import portfolio_classifications
 
 
 
@@ -2205,47 +2205,76 @@ def main():
                                     mime="text/csv",
                                     key=f"download_annual_returns_{asset}"
                                 )
-
-            with tab3:  # Portfolio Classification
-                from portfolio_classification import create_classification_charts
-                
-                # Create dictionary of assets and their allocations
-                portfolio_allocations = {
-                    name: weight * 100 for name, weight in zip(asset_names, asset_weights)
-                }
-                
-                if portfolio_allocations:
-                    fig_type, fig_access, fig_liquidity, summary_df, classification_df = create_classification_charts(portfolio_allocations)
-                    
-                    # Display charts in columns
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.plotly_chart(fig_type, use_container_width=True)
-                        st.plotly_chart(fig_liquidity, use_container_width=True)
-                    with col2:
-                        st.plotly_chart(fig_access, use_container_width=True)
-
-                    # Display summary statistics
-                    st.subheader("Portfolio Classification Summary (%)")
-                    st.dataframe(summary_df)
-
-                    # Display detailed classification
-                    st.subheader("Detailed Asset Classification")
-                    st.dataframe(classification_df)
-
-                    # Add download button for the data
-                    csv = classification_df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Portfolio Classification Data",
-                        data=csv,
-                        file_name="portfolio_classification.csv",
-                        mime="text/csv"
-                    )
-
         except Exception as e:
             st.error(f"Portfolio calculation error: {str(e)}")
     else:
         st.info("Please upload data for all assets to view portfolio analytics.")
+
+        
+        # from portfolio_classification import extract_asset_classifications, create_sunburst_table
+
+        # with tab3:
+            # # 1. Create dictionary of assets and their allocations (in %).
+            # portfolio_allocations = {name: weight * 100 for name, weight in zip(asset_names, asset_weights)}
+            
+            # # 2. Only proceed if we have any assets
+            # if portfolio_allocations:
+            #     # Read classification data from your Excel
+            #     file_path = "classified_dataset.xlsx"  # Adjust if needed
+            #     ASSET_CLASSIFICATIONS = extract_asset_classifications(file_path)
+                
+            #     # Get the total portfolio value (fallback to 1M if not provided)
+            #     total_portfolio_value = st.session_state.get("total_portfolio_value", 1_000_000)
+                
+            #     # 3. Build the hierarchical breakdown table
+            #     hierarchical_df = create_sunburst_table(
+            #         assets=portfolio_allocations,
+            #         total_portfolio_value=total_portfolio_value,
+            #         asset_classifications=ASSET_CLASSIFICATIONS
+            #     )
+                
+            #     # 4. Create a Sunburst chart
+            #     fig_sunburst = px.sunburst(
+            #         hierarchical_df,
+            #         path=["Classification", "Asset Class", "Sub-Asset Class", "Liquidity", "Instrument/Manager"],
+            #         values="Allocation (%)",
+            #         title="Portfolio Hierarchy"
+            #     )
+                
+            #     # 5. Build a summary DataFrame by Classification
+            #     summary_df = (
+            #         hierarchical_df
+            #         .groupby("Classification")["Allocation (%)"]
+            #         .sum()
+            #         .reset_index()
+            #         .rename(columns={"Allocation (%)": "Allocation (%)"})
+            #     )
+                
+            #     # 6. Display charts and tables in columns
+            #     col1, col2 = st.columns(2)
+            #     with col1:
+            #         st.plotly_chart(fig_sunburst, use_container_width=True)
+            #     with col2:
+            #         st.subheader("Portfolio Classification Summary (%)")
+            #         st.dataframe(summary_df)
+                
+            #     # 7. Display the full hierarchical classification table
+            #     st.subheader("Detailed Asset Classification")
+            #     st.dataframe(hierarchical_df)
+                
+            #     # 8. Add a download button for the detailed data
+            #     csv = hierarchical_df.to_csv(index=False)
+            #     st.download_button(
+            #         label="Download Portfolio Classification Data",
+            #         data=csv,
+            #         file_name="portfolio_classification.csv",
+            #         mime="text/csv"
+            #     )
+
+
+
+        
+    
 
 if __name__ == "__main__":
     main()

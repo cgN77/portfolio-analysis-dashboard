@@ -1,151 +1,55 @@
-import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from typing import Dict, List, Tuple
+import matplotlib.pyplot as plt
+from matplotlib.table import Table
 
 def extract_asset_classifications(file_path, sheet_name="Sheet1"):
     df = pd.read_excel(file_path, sheet_name=sheet_name)
     asset_classifications = {
-        row["Asset"]: (row["Traditional/Alternative"], row["Public/Private"], row["Liquidity"])
+        row["Asset"]: {
+            "Classification": row["Classification"],
+            "Asset Class": row["Asset Class"],
+            "Sub-Asset Class": row["Sub-Asset Class"],
+            "Liquidity": row["Liquidity"],
+            "Instrument/Manager": row["Instrument/Manager"],
+        }
         for _, row in df.iterrows()
     }
-    
     return asset_classifications
 
-file_path = "classified_dataset.xlsx" 
-ASSET_CLASSIFICATIONS = extract_asset_classifications(file_path)
+def create_sunburst_table(assets, total_portfolio_value, asset_classifications):
+    data = []
+    for asset, alloc_pct in assets.items():
+        classification = asset_classifications.get(asset, {})
+        data.append({
+            "Classification": classification.get("Classification", "Alternative"),
+            "Asset Class": classification.get("Asset Class", ""),
+            "Sub-Asset Class": classification.get("Sub-Asset Class", ""),
+            "Liquidity": classification.get("Liquidity", "Illiquid"),
+            "Instrument/Manager": classification.get("Instrument/Manager", asset),
+            "Allocation (%)": alloc_pct,
+            "Allocation ($)": (alloc_pct / 100.0) * total_portfolio_value,
+        })
+    df = pd.DataFrame(data)
+    return df
 
-def classify_asset(asset_name: str) -> Tuple[str, str, str]:
-    """
-    Classify an asset based on the predefined classifications.
-    Returns (traditional/alternative, public/private, liquidity level)
-    """
-    if asset_name in ASSET_CLASSIFICATIONS:
-        return ASSET_CLASSIFICATIONS[asset_name]
-    return ('Alternative', 'Private', 'Illiquid')
-
-def create_classification_charts(assets: Dict[str, float]):
-    """Create classification charts based on asset data"""
-    # Prepare data
-    df = pd.DataFrame([
-        {
-            'Asset': name,
-            'Allocation': value,
-            'Type': classify_asset(name)[0],
-            'Access': classify_asset(name)[1],
-            'Liquidity': classify_asset(name)[2]
-        }
-        for name, value in assets.items()
-    ])
-    fig_type = px.pie(
-        df, 
-        values='Allocation', 
-        names='Type',
-        title='Portfolio Distribution: Traditional vs Alternative',
-        color_discrete_map={'Traditional': 'rgb(102, 197, 204)', 'Alternative': 'rgb(248, 156, 116)'}
-    )
+def plot_sunburst_table(df):
+    fig, ax = plt.subplots(figsize=(10, len(df) * 0.5))
+    ax.set_frame_on(False)
+    ax.xaxis.set_visible(False)
+    ax.yaxis.set_visible(False)
     
-    fig_access = px.pie(
-        df, 
-        values='Allocation', 
-        names='Access',
-        title='Portfolio Distribution: Public vs Private',
-        color_discrete_map={'Public': 'rgb(102, 197, 204)', 'Private': 'rgb(248, 156, 116)'}
-    )
+    table = Table(ax, bbox=[0, 0, 1, 1])
+    col_labels = list(df.columns)
+    cell_colors = [['#4f81bd' if i == 0 else '#dbe5f1' for i in range(len(col_labels))]]
     
-    fig_liquidity = px.pie(
-        df, 
-        values='Allocation', 
-        names='Liquidity',
-        title='Portfolio Distribution by Liquidity',
-        color_discrete_map={
-            'Highly Liquid': 'rgb(102, 197, 204)',
-            'Moderately Liquid': 'rgb(248, 156, 116)',
-            'Illiquid': 'rgb(220, 176, 242)'
-        }
-    )
-
-    summary_df = pd.DataFrame([
-        df.groupby('Type')['Allocation'].sum(),
-        df.groupby('Access')['Allocation'].sum(),
-        df.groupby('Liquidity')['Allocation'].sum()
-    ], index=['By Type', 'By Access', 'By Liquidity'])
-
-    return fig_type, fig_access, fig_liquidity, summary_df, df
-
-def main():
-    st.title("Portfolio Classification Analysis")
+    # Add headers
+    for j, label in enumerate(col_labels):
+        table.add_cell(0, j, width=1/len(col_labels), height=0.2, text=label, loc='center', facecolor='#4f81bd', edgecolor='black', fontsize=10, fontweight='bold', text_props={'color': 'white'})
     
-    st.write("""
-    This tool helps you analyze your portfolio composition based on:
-    - Traditional vs Alternative assets
-    - Public vs Private markets
-    - Liquidity levels
+    # Add data
+    for i, row in enumerate(df.itertuples(), start=1):
+        for j, value in enumerate(row[1:]):
+            table.add_cell(i, j, width=1/len(col_labels), height=0.15, text=str(value), loc='center', facecolor='#dbe5f1' if i % 2 == 0 else 'white', edgecolor='black', fontsize=9)
     
-    Enter your assets and their allocations below.
-    """)
-
-    if 'assets' not in st.session_state:
-        st.session_state.assets = {}
-
-    with st.form("asset_input_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            asset_name = st.selectbox(
-                "Asset Name",
-                options=list(ASSET_CLASSIFICATIONS.keys()),
-                help="Select an asset from the predefined list"
-            )
-        with col2:
-            allocation = st.number_input("Allocation (%)", min_value=0.0, max_value=100.0, value=0.0)
-        
-        submitted = st.form_submit_button("Add Asset")
-        if submitted and asset_name and allocation:
-            st.session_state.assets[asset_name] = allocation
-
-    if st.session_state.assets:
-        st.subheader("Current Portfolio")
-        portfolio_df = pd.DataFrame([
-            {"Asset": k, "Allocation (%)": v} 
-            for k, v in st.session_state.assets.items()
-        ])
-        st.dataframe(portfolio_df)
-
-        asset_to_remove = st.selectbox(
-            "Select asset to remove",
-            ["None"] + list(st.session_state.assets.keys())
-        )
-        if asset_to_remove != "None" and st.button("Remove Selected Asset"):
-            del st.session_state.assets[asset_to_remove]
-            st.experimental_rerun()
-
-        total_allocation = sum(st.session_state.assets.values())
-        if abs(total_allocation - 100) > 0.01:  # Allow for small floating-point differences
-            st.warning(f"Total allocation ({total_allocation}%) does not equal 100%")
-        
-        fig_type, fig_access, fig_liquidity, summary_df, classification_df = create_classification_charts(st.session_state.assets)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.plotly_chart(fig_type, use_container_width=True)
-            st.plotly_chart(fig_liquidity, use_container_width=True)
-        with col2:
-            st.plotly_chart(fig_access, use_container_width=True)
-
-        st.subheader("Portfolio Classification Summary (%)")
-        st.dataframe(summary_df)
-
-        st.subheader("Detailed Asset Classification")
-        st.dataframe(classification_df)
-
-        csv = classification_df.to_csv(index=False)
-        st.download_button(
-            label="Download Portfolio Classification Data",
-            data=csv,
-            file_name="portfolio_classification.csv",
-            mime="text/csv"
-        )
-
-if __name__ == "__main__":
-    main() 
+    ax.add_table(table)
+    plt.show()
