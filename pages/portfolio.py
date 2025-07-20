@@ -2,6 +2,12 @@ import streamlit as st
 import pandas as pd
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 import plotly.express as px
+import plotly.io as pio
+import plotly.colors
+pio.renderers.default = "browser"  # or "browser" if running as a script
+pio.templates.default = "plotly_white"
+
+
 
 def extract_asset_classifications(file_path, sheet_name="Sheet1"):
     df = pd.read_excel(file_path, sheet_name=sheet_name)
@@ -58,6 +64,68 @@ def create_sunburst_table(assets_pct, total_portfolio_value, asset_classificatio
         "Instrument/Manager", "Allocation (%)", "Allocation ($)"
     ])
     return df_hierarchy
+
+import pandas as pd
+
+def create_sunburst_data(assets_pct, total_portfolio_value, asset_classifications):
+    rows = []
+
+    for asset, alloc_pct in assets_pct.items():
+        # Fallback chain for each level
+        instrument = asset_classifications.get(asset, {}).get("Instrument/Manager") or asset
+        sub_asset_class = asset_classifications.get(asset, {}).get("Sub-Asset Class") or instrument
+        asset_class = asset_classifications.get(asset, {}).get("Asset Class") or sub_asset_class
+        classification = asset_classifications.get(asset, {}).get("Classification") or asset_class
+        allocation_value = (alloc_pct / 100.0) * total_portfolio_value
+
+        rows.append({
+            "Classification": classification,
+            "Asset Class": asset_class,
+            "Sub-Asset Class": sub_asset_class,
+            "Instrument/Manager": instrument,
+            "Allocation ($)": allocation_value
+        })
+
+    return pd.DataFrame(rows)
+
+color_map = {
+    "Traditional": "#e3a02a",
+    "Alternative": "#1f1f2e",
+    "Public Equity": "#9dc7e3",
+    "Private Credit": "#b7e2b1",
+    "Commodities": "#cba6d3",
+    "Private Equity": "#fcead7",
+    "Hedge Funds": "#d2e3f3"
+}
+
+def create_sunburst_plot(df):
+    df_grouped = df.groupby([
+        "Classification", "Asset Class", "Sub-Asset Class", "Instrument/Manager"
+    ], as_index=False).agg({"Allocation ($)": "sum"})
+
+    fig = px.sunburst(
+        df_grouped,
+        path=["Classification", "Asset Class", "Sub-Asset Class", "Instrument/Manager"],
+        values="Allocation ($)",
+        color="Classification",
+        color_discrete_map=color_map,
+        title="Portfolio Allocation Sunburst"
+    )
+
+    fig.update_traces(
+        textinfo="label+percent entry",
+        insidetextorientation='radial',
+        root_color="white"
+    )
+    fig.update_layout(
+        margin=dict(t=40, l=0, r=0, b=0),
+        uniformtext=dict(minsize=10, mode='hide'),
+        sunburstcolorway=list(color_map.values()),  # optional redundancy
+        paper_bgcolor="black"
+    )
+
+    fig.show()
+
 
 def create_summary_table(assets_pct, total_portfolio_value, asset_classifications):
     classification_totals = {}
@@ -443,6 +511,53 @@ def style_income_growth_table(df):
     })
     return styled
 
+def aggregate_by_attribute(allocations_pct, total_portfolio_value, asset_classifications, attribute):
+    agg = {}
+    for asset, pct in allocations_pct.items():
+        key = asset_classifications.get(asset, {}).get(attribute, "Unknown")
+        agg[key] = agg.get(key, 0) + pct
+    return agg
+
+def plot_attribute_donut(agg_dict, title, color_map=None, default_palette=None):
+    labels = list(agg_dict.keys())
+    values = list(agg_dict.values())
+
+    # Define modern, aesthetic palettes for known attributes
+    default_income_growth_colors = {
+        "Growth": "#4F8FC0",
+        "Income": "#F7B32B",
+        "Growth & Income": "#A1C349",
+        "Other": "#B388FF",
+        "Unknown": "#B0BEC5"
+    }
+    default_liquidity_colors = {
+        "Liquid": "#00B8A9",
+        "Semi-liquid": "#F6416C",
+        "Illiquid": "#FFDE7D",
+        "Unknown": "#B0BEC5"
+    }
+    # Use provided color_map or pick based on title
+    if color_map is not None:
+        colors = [color_map.get(label, "#7f7f7f") for label in labels]
+    elif "Income/Growth" in title:
+        colors = [default_income_growth_colors.get(label, plotly.colors.qualitative.Plotly[i % 10]) for i, label in enumerate(labels)]
+    elif "Liquidity" in title:
+        colors = [default_liquidity_colors.get(label, plotly.colors.qualitative.Plotly[i % 10]) for i, label in enumerate(labels)]
+    else:
+        # fallback to Plotly palette
+        palette = default_palette or plotly.colors.qualitative.Plotly
+        colors = [palette[i % len(palette)] for i in range(len(labels))]
+
+    fig = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.4,
+        marker=dict(colors=colors),
+        textinfo='label+percent',
+        textposition='inside'
+    )])
+    fig.update_layout(title_text=title, showlegend=True, height=400)
+    return fig
 
 def main():
     st.set_page_config(page_title="Fund Classification", layout="wide")
@@ -492,6 +607,7 @@ def main():
                 asset_classifications
             )
             plot_aggrid_table(summary_df)
+            
 
             # Income vs Growth Overview
             st.subheader("Overview on Asset Allocation – Income vs Growth")
@@ -505,6 +621,16 @@ def main():
             # 🟡 Donut chart instead of pie
             donut_chart = plot_income_growth_donut(allocation_data)
             st.plotly_chart(donut_chart, use_container_width=True)
+
+            # Additional: Income/Growth breakdown donut
+            income_growth_agg = aggregate_by_attribute(allocations_pct, total_portfolio_value, asset_classifications, "Income/Growth")
+            income_growth_fig = plot_attribute_donut(income_growth_agg, "Allocation by Income/Growth")
+            st.plotly_chart(income_growth_fig, use_container_width=True)
+
+            # Additional: Liquidity breakdown donut
+            liquidity_agg = aggregate_by_attribute(allocations_pct, total_portfolio_value, asset_classifications, "Liquidity")
+            liquidity_fig = plot_attribute_donut(liquidity_agg, "Allocation by Liquidity")
+            st.plotly_chart(liquidity_fig, use_container_width=True)
 
             # 🟢 Income vs Growth Table
             income_growth_table = create_income_growth_table(allocation_data)
@@ -600,6 +726,14 @@ def main():
                 file_name="portfolio_breakdown.csv",
                 mime="text/csv"
             )
+
+            df = pd.read_excel("input.xlsx")
+
+            # Optional: Set equal weights or use your own if available
+            check=False if 0 in allocations_pct.values() else True
+            if check:
+                df=create_sunburst_data(allocations_pct, total_portfolio_value, asset_classifications)
+                create_sunburst_plot(df)
         else:
             st.warning("Total allocation amount must be greater than $0")
     else:
